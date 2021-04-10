@@ -112,10 +112,12 @@ Another script is available to automatically create missing folder using in dir(
 It can be integrated as pre start/reload script for Syslog-NG using systemd:
 
 ```
+mkdir -p /etc/systemd/system/syslog-ng.service.d/
 echo "[Service]" > /etc/systemd/system/syslog-ng.service.d/create-missing-folders.conf
 echo "Environment=NO_LOGS_TS=1" >> /etc/systemd/system/syslog-ng.service.d/create-missing-folders.conf
 echo "ExecStartPre=/usr/bin/python3 /opt/syslog-ng-peer-amq-consumer/syslog_ng_create_missing_folders.py --syslog-ng-conf-dir /etc/syslog-ng" >> /etc/systemd/system/syslog-ng.service.d/create-missing-folders.conf
-echo "ExecReload=/usr/bin/python3 /opt/syslog-ng-peer-amq-consumer/syslog_ng_create_missing_folders.py --syslog-ng-conf-dir /etc/syslog-ng" >> /etc/systemd/system/syslog-ng.service.d/create-missing-folders.confssystemctl daemon-reload
+echo "ExecReload=/usr/bin/python3 /opt/syslog-ng-peer-amq-consumer/syslog_ng_create_missing_folders.py --syslog-ng-conf-dir /etc/syslog-ng" >> /etc/systemd/system/syslog-ng.service.d/create-missing-folders.conf
+systemctl daemon-reload
 systemctl reload syslog-ng
 ```
 
