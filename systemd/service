@@ -1,0 +1,40 @@
+[Unit]
+Description=Consume logs from AMQ server to local syslog-ng UDP endpoint
+Wants=network.target network-online.target
+After=network.target network-online.target
+# Make sure it stops when syslog-ng stops or crash
+Requires=syslog-ng.service
+
+[Service]
+Environment=NO_LOGS_TS=1
+EnvironmentFile=/etc/default/syslog-ng-peer-amq-consumer
+Type=simple
+ExecStart=/usr/bin/python3 syslog_ng_amq_consumer.py \
+  --amq-host ${AMQ_HOST} \
+  --amq-port ${AMQ_PORT} \
+  --amq-vhost ${AMQ_VHOST} \
+  --amq-username ${AMQ_USERNAME} \
+  --amq-password ${AMQ_PASSWORD} \
+  --amq-queue ${AMQ_QUEUE} \
+  --amq-prefetch ${AMQ_PREFETCH} \
+  --udp-host ${UDP_HOST} \
+  --udp-port ${UDP_PORT}
+WorkingDirectory=/opt/syslog-ng-peer-amq-consumer
+# No idea why but CAP_NET_BIND_SERVICE seems to be insufficient to send crafter UDP packets
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=syslog-ng-peer-amq-consumer
+Restart=always
+RestartSec=60
+StartLimitInterval=3600
+StartLimitBurst=30
+MemoryAccounting=true
+CPUAccounting=true
+IOAccounting=true
+IPAccounting=true
+
+[Install]
+# Make sure it starts when syslog-ng starts
+WantedBy=multi-user.target syslog-ng.service

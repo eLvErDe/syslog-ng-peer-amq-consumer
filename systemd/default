@@ -1,0 +1,13 @@
+# Peer RabbitMQ server parameters
+AMQ_HOST='peer.domain.com'
+AMQ_PORT='5672'
+AMQ_VHOST='/'
+AMQ_USERNAME='syslog-ng'
+AMQ_PASSWORD='password'
+AMQ_QUEUE='syslog-ng-for-server2'
+AMQ_PREFETCH='1000'
+
+# Local Syslog-NG endpoint
+# Do not use 127.0.0.1, it does not work but I don't know why
+UDP_HOST='myself.domain.com'
+UDP_PORT='515'
