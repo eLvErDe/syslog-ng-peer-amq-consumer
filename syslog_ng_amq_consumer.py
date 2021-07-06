@@ -176,7 +176,7 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
                 channel = connection.channel()
                 channel.basic_qos(prefetch_count=self.amq_prefetch)
                 channel.basic_consume(self.amq_queue, self.on_message)
-                self.logger.info("Connected and ready to consume messages")
+                self.logger.info("Connected and ready to consume messages with prefetch_count=%d", self.amq_prefetch)
                 try:
                     channel.start_consuming()
                 except KeyboardInterrupt:
@@ -272,6 +272,7 @@ if __name__ == "__main__":
             amq_vhost=config.amq_vhost,
             amq_username=config.amq_username,
             amq_password=config.amq_password,
+            amq_prefetch=config.amq_prefetch,
             udp_host=config.udp_host,
             udp_port=config.udp_port,
         )
