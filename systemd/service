@@ -18,7 +18,8 @@ ExecStart=/usr/bin/python3 syslog_ng_amq_consumer.py \
   --amq-queue ${AMQ_QUEUE} \
   --amq-prefetch ${AMQ_PREFETCH} \
   --udp-host ${UDP_HOST} \
-  --udp-port ${UDP_PORT}
+  --udp-port ${UDP_PORT} \
+  --exclude-patterns $EXCLUDE_PATTERNS
 WorkingDirectory=/opt/syslog-ng-peer-amq-consumer
 # No idea why but CAP_NET_BIND_SERVICE seems to be insufficient to send crafter UDP packets
 User=root

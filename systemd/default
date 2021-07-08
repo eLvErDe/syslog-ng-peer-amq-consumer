@@ -11,3 +11,6 @@ AMQ_PREFETCH='1000'
 # Do not use 127.0.0.1, it does not work but I don't know why
 UDP_HOST='myself.domain.com'
 UDP_PORT='515'
+
+# Exclude message matching one of these patterns
+# EXCLUDE_PATTERNS="pattern1 pattern2"

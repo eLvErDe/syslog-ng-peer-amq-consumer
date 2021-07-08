@@ -12,6 +12,7 @@ Consume logs sent by syslog-ng into AMQ server and push them to local syslog-ng 
 import time
 import logging
 import datetime
+from typing import List, Optional
 
 import pika  # type: ignore
 from scapy.packet import Raw  # type: ignore
@@ -50,6 +51,8 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
     :type udp_host: str, defaults to 127.0.0.1
     :param udp_port: Destination Syslog UDP port
     :type udp_port: int, defaults to 514
+    :param exclude_patterns: Exclude message matching one of this pattern
+    :type exclude_patterns: list, optional
     """
 
     def __init__(  # pylint: disable=too-many-arguments
@@ -63,6 +66,7 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         amq_prefetch: int = 1000,
         udp_host: str = "127.0.0.1",
         udp_port: int = 514,
+        exclude_patterns: Optional[List] = None,
     ) -> None:
         assert isinstance(amq_host, str) and amq_host, "amq_host parameter must be a non-empty string"
         assert isinstance(amq_queue, str) and amq_queue, "amq_queue parameter must be a non-empty string"
@@ -73,6 +77,7 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         assert isinstance(amq_prefetch, int) and amq_prefetch > 0, "amq_prefetch parameter must be a positive integer"
         assert isinstance(udp_host, str) and udp_host, "udp_host parameter must be a non-empty string"
         assert isinstance(udp_port, int) and 1 <= udp_port <= 65535, "udp_port parameter must be an integer between 1 and 65535"
+        assert exclude_patterns is None or isinstance(exclude_patterns, list) and all(isinstance(x, str) and x for x in exclude_patterns), "exclude_patterns parameter must be None or a list of non-empty strings"
         self.amq_host = amq_host
         self.amq_queue = amq_queue
         self.amq_port = amq_port
@@ -82,6 +87,10 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         self.amq_prefetch = amq_prefetch
         self.udp_host = udp_host
         self.udp_port = udp_port
+        if exclude_patterns is None:
+            exclude_patterns = []
+        self.exclude_patterns = exclude_patterns
+        self.exclude_patterns_bytes = [bytes(x, "utf-8") for x in self.exclude_patterns]
 
         self.logger = logging.getLogger(self.__class__.__name__)
         # For periodic stats logger
@@ -147,7 +156,9 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
 
         self.consume_log_count += 1
         source_ip = header_frame.headers["SOURCEIP"]
-        self.udp_publish(body, source_ip)
+        match_exclude = any(x in body for x in self.exclude_patterns_bytes)
+        if not match_exclude:
+            self.udp_publish(body, source_ip)
 
         # Just for logging every 60 seconds
         # Of course if there's nothing to consume there will be no log at all
@@ -247,6 +258,16 @@ if __name__ == "__main__":
             metavar="515",
         )
 
+        message = parser.add_argument_group("Messages", "Options related to messages payload")
+        message.add_argument(
+            "--exclude-patterns",
+            type=str,
+            nargs="*",
+            required=False,
+            help="Exclude messages matching this pattern",
+            metavar="dsd17-periodicmeasures-q2db pattern2",
+        )
+
         parsed = parser.parse_args()
         return parsed
 
@@ -281,6 +302,7 @@ if __name__ == "__main__":
             amq_prefetch=config.amq_prefetch,
             udp_host=config.udp_host,
             udp_port=config.udp_port,
+            exclude_patterns=config.exclude_patterns,
         )
         # In case syslog-ng is not fully ready yet, as a safety measure
         time.sleep(5)
