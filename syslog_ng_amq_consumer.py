@@ -77,7 +77,9 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         assert isinstance(amq_prefetch, int) and amq_prefetch > 0, "amq_prefetch parameter must be a positive integer"
         assert isinstance(udp_host, str) and udp_host, "udp_host parameter must be a non-empty string"
         assert isinstance(udp_port, int) and 1 <= udp_port <= 65535, "udp_port parameter must be an integer between 1 and 65535"
-        assert exclude_patterns is None or isinstance(exclude_patterns, list) and all(isinstance(x, str) and x for x in exclude_patterns), "exclude_patterns parameter must be None or a list of non-empty strings"
+        assert (
+            exclude_patterns is None or isinstance(exclude_patterns, list) and all(isinstance(x, str) and x for x in exclude_patterns)
+        ), "exclude_patterns parameter must be None or a list of non-empty strings"
         self.amq_host = amq_host
         self.amq_queue = amq_queue
         self.amq_port = amq_port
@@ -286,6 +288,7 @@ if __name__ == "__main__":
 
         try:
             from setproctitle import setproctitle
+
             setproctitle(" ".join(sys.argv))
         except Exception as exc:  # pylint: disable=broad-except
             logging.warning("Unable to set process name: %s: %s", exc.__class__.__name__, exc)
