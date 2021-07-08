@@ -263,6 +263,12 @@ if __name__ == "__main__":
         logging.getLogger("pika").setLevel(logging.WARNING)
         logging.info("Application is starting in 5 seconds")
 
+        try:
+            from setproctitle import setproctitle
+            setproctitle(" ".join(sys.argv))
+        except Exception as exc:  # pylint: disable=broad-except
+            logging.warning("Unable to set process name: %s: %s", exc.__class__.__name__, exc)
+
         config = cli_arguments()
 
         consumer = AmqLogsToUdp(
