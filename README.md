@@ -76,6 +76,8 @@ destination net_log { file("/var/log/net.log" owner("root") group("adm") perm(06
 log { source(s_net); source(s_net_peer); destination(net_log); };
 ```
 
+I later modified the configuration to separate legacy BSD messages from new IETF ones, using different RabbitMQ routing key and different ports.
+
 # RabbitMQ consumer
 
 This Python application must be installed on each Syslog-NG server and will consume buffered message from other node.
