@@ -47,10 +47,16 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
     :type amq_password: str, defaults to guest
     :param amq_prefetch: Number of AMQ messages to get per batch
     :type amq_prefetch: str, defaults to 1000
+    :param amq_routing_key_rfc3164_bsd: Routing key used by messages using RFC3164 BSD legacy format
+    :type amq_routing_key_rfc3164_bsd: str, defaults to rfc3164-bsd
+    :param amq_routing_key_rfc5424_ietf: Routing key used by messages using RFC5424 IETF new format
+    :type amq_routing_key_rfc5424_ietf: str, defaults to rfc5424-ietf
     :param udp_host: Destination Syslog UDP host
     :type udp_host: str, defaults to 127.0.0.1
-    :param udp_port: Destination Syslog UDP port
-    :type udp_port: int, defaults to 514
+    :param udp_port_rfc3164_bsd: Destination Syslog UDP port, for messages using RFC3164 BSD legacy format
+    :type udp_port_rfc3164_bsd: int, defaults to 514
+    :param udp_port_rfc5424_ietf: Destination Syslog UDP port, for messages using RFC5424 IETF new format, we still use UDP to spoof source address
+    :type udp_port_rfc5424_ietf: int, defaults to 601
     :param exclude_patterns: Exclude message matching one of this pattern
     :type exclude_patterns: list, optional
     """
@@ -64,8 +70,11 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         amq_username: str = "guest",
         amq_password: str = "guest",
         amq_prefetch: int = 1000,
+        amq_routing_key_rfc3164_bsd: str = "rfc3164-bsd",
+        amq_routing_key_rfc5424_ietf: str = "rfc5424-ietf",
         udp_host: str = "127.0.0.1",
-        udp_port: int = 514,
+        udp_port_rfc3164_bsd: int = 514,
+        udp_port_rfc5424_ietf: int = 601,
         exclude_patterns: Optional[List] = None,
     ) -> None:
         assert isinstance(amq_host, str) and amq_host, "amq_host parameter must be a non-empty string"
@@ -75,8 +84,11 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         assert isinstance(amq_username, str) and amq_username, "amq_username parameter must be a non-empty string"
         assert isinstance(amq_password, str) and amq_password, "amq_password parameter must be a non-empty string"
         assert isinstance(amq_prefetch, int) and amq_prefetch > 0, "amq_prefetch parameter must be a positive integer"
+        assert isinstance(amq_routing_key_rfc3164_bsd, str), "amq_routing_key_rfc3164_bsd parameter must be a string"
+        assert isinstance(amq_routing_key_rfc5424_ietf, str), "amq_routing_key_rfc5424_ietf parameter must be a string"
         assert isinstance(udp_host, str) and udp_host, "udp_host parameter must be a non-empty string"
-        assert isinstance(udp_port, int) and 1 <= udp_port <= 65535, "udp_port parameter must be an integer between 1 and 65535"
+        assert isinstance(udp_port_rfc3164_bsd, int) and 1 <= udp_port_rfc3164_bsd <= 65535, "udp_port_rfc3164_bsd parameter must be an integer between 1 and 65535"
+        assert isinstance(udp_port_rfc5424_ietf, int) and 1 <= udp_port_rfc5424_ietf <= 65535, "udp_port_rfc5424_ietf parameter must be an integer between 1 and 65535"
         assert (
             exclude_patterns is None or isinstance(exclude_patterns, list) and all(isinstance(x, str) and x for x in exclude_patterns)
         ), "exclude_patterns parameter must be None or a list of non-empty strings"
@@ -87,8 +99,11 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         self.amq_username = amq_username
         self.amq_password = amq_password
         self.amq_prefetch = amq_prefetch
+        self.amq_routing_key_rfc3164_bsd = amq_routing_key_rfc3164_bsd
+        self.amq_routing_key_rfc5424_ietf = amq_routing_key_rfc5424_ietf
         self.udp_host = udp_host
-        self.udp_port = udp_port
+        self.udp_port_rfc3164_bsd = udp_port_rfc3164_bsd
+        self.udp_port_rfc5424_ietf = udp_port_rfc5424_ietf
         if exclude_patterns is None:
             exclude_patterns = []
         self.exclude_patterns = exclude_patterns
@@ -96,7 +111,10 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
 
         self.logger = logging.getLogger(self.__class__.__name__)
         # For periodic stats logger
-        self.consume_log_count = 0
+        self.consume_log_count_rfc3164_bsd = 0
+        self.consume_log_count_rfc5424_ietf = 0
+        self.consume_log_count_unspecified = 0
+        self.consume_log_count_unknown = 0
         self.consume_log_dt = self.utc_now
 
         self.socket = conf.L3socket()
@@ -123,7 +141,7 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         parameters = pika.ConnectionParameters(host=self.amq_host, port=self.amq_port, virtual_host=self.amq_vhost, credentials=credentials, heartbeat=60)
         return parameters
 
-    def udp_publish(self, body: bytes, source_ip: str) -> None:
+    def udp_publish(self, *, body: bytes, source_ip: str, destination_port: int) -> None:
         """
         Publish given syslog message as raw bytes to destination UDP endpoint and spoof source address with given source_ip
 
@@ -131,9 +149,11 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         :type body: str
         :param source_ip: Spoof source IP using this address
         :type source_ip: str
+        :param destination_port: Destination port because we may use different ports for BSD and IETF messages
+        :type destination_port: int
         """
 
-        packet = IP(src=source_ip, dst=self.udp_host) / UDP(dport=self.udp_port) / Raw(load=body)
+        packet = IP(src=source_ip, dst=self.udp_host) / UDP(dport=destination_port) / Raw(load=body)
         self.socket.send(packet)
 
     def on_message(
@@ -156,18 +176,39 @@ class AmqLogsToUdp:  # pylint: disable=too-many-instance-attributes
         :type body: bytes
         """
 
-        self.consume_log_count += 1
+        # Extract routing key to see what type of message is being received
+        routing_key = method_frame.routing_key
+        if routing_key == self.amq_routing_key_rfc3164_bsd:
+            destination_port = self.udp_port_rfc3164_bsd
+            self.consume_log_count_rfc3164_bsd += 1
+        elif routing_key == "":  # For compat purpose
+            destination_port = self.udp_port_rfc3164_bsd
+            self.consume_log_count_unspecified += 1
+        elif routing_key == self.amq_routing_key_rfc5424_ietf:
+            destination_port = self.udp_port_rfc5424_ietf
+            self.consume_log_count_rfc5424_ietf += 1
+        else:
+            self.consume_log_count_unknown += 1
+            channel.basic_ack(delivery_tag=method_frame.delivery_tag)
+            return
+
         source_ip = header_frame.headers["SOURCEIP"]
         match_exclude = any(x in body for x in self.exclude_patterns_bytes)
         if not match_exclude:
-            self.udp_publish(body, source_ip)
+            self.udp_publish(body=body, source_ip=source_ip, destination_port=destination_port)
 
         # Just for logging every 60 seconds
         # Of course if there's nothing to consume there will be no log at all
         # I thought about writing this using asyncio but too much work for no
         # real improvments
         if self.utc_now - datetime.timedelta(seconds=60) > self.consume_log_dt:
-            self.logger.info("Consumed %d messages for the last 60s", self.consume_log_count)
+            self.logger.info(
+                "Consumed %d RFC3164-BSD, %d RFC5424-IETF, %d untagged as RFC3164-BSD and %d unknown as discard messages for the last 60s",
+                self.consume_log_count_rfc3164_bsd,
+                self.consume_log_count_rfc5424_ietf,
+                self.consume_log_count_unspecified,
+                self.consume_log_count_unknown,
+            )
             self.logger.info("Last log entry was: %s from %s", body, source_ip)
             self.consume_log_dt = self.utc_now
             self.consume_log_count = 0
@@ -243,6 +284,8 @@ if __name__ == "__main__":
         group_amq.add_argument("--amq-password", type=str, required=True, help="Password to authenticate with AMQ server", metavar="guest")
         group_amq.add_argument("--amq-queue", type=str, required=True, help="Name of the AMQ queue to consume logs messages from", metavar="syslog-ng-for-peer")
         group_amq.add_argument("--amq-prefetch", type=int, required=True, help="Number of AMQ messages to get per batch", metavar="1000")
+        group_amq.add_argument("--amq-routing-key-rfc3164-bsd", type=str, required=True, help="Routing key used by messages using RFC3164 BSD legacy format", metavar="rfc3164-bsd")
+        group_amq.add_argument("--amq-routing-key-rfc5424-ietf", type=str, required=True, help="Routing key used by messages using RFC5424 IETF new format", metavar="rfc5424-ietf")
 
         group_udp = parser.add_argument_group("Syslog-NG", "UDP destination for Syslog-NG")
         group_udp.add_argument(
@@ -253,11 +296,18 @@ if __name__ == "__main__":
             metavar="10.1.0.2",
         )
         group_udp.add_argument(
-            "--udp-port",
+            "--udp-port-rfc3164-bsd",
             type=int,
             required=True,
-            help="Destination Syslog UDP port (You probably want to use a different port, otherwise messages will loop between peers)",
+            help="Destination Syslog UDP port for messages using RFC3164 BSD legacy format (You probably want to use a different port, otherwise messages will loop between peers)",
             metavar="515",
+        )
+        group_udp.add_argument(
+            "--udp-port-rfc5424-ietf",
+            type=int,
+            required=True,
+            help="Destination Syslog UDP port for messages using RFC5424 IETF new format (You probably want to use a different port, otherwise messages will loop between peers)",
+            metavar="602",
         )
 
         message = parser.add_argument_group("Messages", "Options related to messages payload")
@@ -303,8 +353,11 @@ if __name__ == "__main__":
             amq_username=config.amq_username,
             amq_password=config.amq_password,
             amq_prefetch=config.amq_prefetch,
+            amq_routing_key_rfc3164_bsd=config.amq_routing_key_rfc3164_bsd,
+            amq_routing_key_rfc5424_ietf=config.amq_routing_key_rfc5424_ietf,
             udp_host=config.udp_host,
-            udp_port=config.udp_port,
+            udp_port_rfc3164_bsd=config.udp_port_rfc3164_bsd,
+            udp_port_rfc5424_ietf=config.udp_port_rfc5424_ietf,
             exclude_patterns=config.exclude_patterns,
         )
         # In case syslog-ng is not fully ready yet, as a safety measure
