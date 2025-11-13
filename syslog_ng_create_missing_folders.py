@@ -55,7 +55,10 @@ def find_path_in_config(config: pathlib.Path) -> List[pathlib.Path]:
         config_str = config_fh.read()
         file_paths = re.findall(rb'file\(\s*"(.+?)"', config_str)
         dir_paths = re.findall(rb'dir\(\s*"(.+?)"', config_str)
-    return [pathlib.Path(str(x, "utf-8")).parent for x in file_paths] + [pathlib.Path(str(x, "utf-8")) for x in dir_paths]
+    folders = [pathlib.Path(str(x, "utf-8")).parent for x in file_paths] + [pathlib.Path(str(x, "utf-8")) for x in dir_paths]
+    # Remove files with $ placeholder
+    folders = [folder for folder in folders if not any(part.startswith("$") for part in folder.parts)]
+    return folders
 
 
 def find_all_paths(folder: pathlib.Path) -> List[pathlib.Path]:
